@@ -32,6 +32,7 @@ jobs:
         echo "BUILD_EXTRA_COMMAND=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "EXTRA_BUILD_COMMAND" | head -n 1 | cut -d ":" -f 2)" >> $GITHUB_ENV
         echo "DISABLE-LTO=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "DISABLE-LTO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
         echo "USE_KPROBES=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "USE_KPROBES" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "WITH_DTBO=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "WITH_DTBO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
         echo "USE_KERNELSU=${{ github.event.inputs.USE_KERNELSU }}" >> $GITHUB_ENV
 
     - name: Setup build kernel environment
@@ -45,8 +46,8 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE && mkdir kernel_workspace && cd kernel_workspace
         mkdir clang-aosp
-        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-${{ env.CLANG_VERSION }}.tar.gz
-        tar -C clang-aosp/ -zxvf clang-${{ env.CLANG_VERSION }}.tar.gz
+        curl -LSs "https://github.com/ShanshanHY/depo/raw/main/clang_download.py" | python3 - ${{ env.CLANG_VERSION }}
+        tar -C clang-aosp/ -zxvf clang.tar.gz
         mkdir gcc-aosp
         wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-11.0.0_r35.tar.gz
         tar -C gcc-aosp/ -zxvf android-11.0.0_r35.tar.gz
@@ -67,8 +68,7 @@ jobs:
             echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }}
             echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }}
         else
-            wget https://github.com/ShanshanHY/depo/raw/main/patch.py
-            python3 patch.py
+            curl -LSs "https://github.com/ShanshanHY/depo/raw/main/patch.py" | python3 -
         fi
         if [ ${{ env.DISABLE-LTO }} = true ]; then
             sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }}
@@ -95,6 +95,12 @@ jobs:
         sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
         cp android-kernel/out/arch/arm64/boot/${{ env.KERNEL_FILE }} AnyKernel3/
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
+
+    - name: Add dtbo.img to Anykernel
+      if: env.WITH_DTBO == 'true'
+      continue-on-error: true
+      run: |
+        cp android-kernel/out/arch/arm64/boot/dtbo.img AnyKernel3/
 
     - name: Upload AnyKernel3
       uses: actions/upload-artifact@v3
