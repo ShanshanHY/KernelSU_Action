@@ -1,4 +1,4 @@
-name: Build Lmi Kernel
+name: Build Jason Kernel
 on:
   workflow_dispatch:
      inputs:
@@ -6,10 +6,9 @@ on:
         description: 'Kernel'
         type: choice
         options: 
-        - Nexus
-        - Perf
+        - TurKernel
         required: true
-        default: 'Nexus'
+        default: 'TurKernel'
       USE_KERNELSU:
         description: 'Use KernelSU'
         required: true
@@ -24,15 +23,17 @@ jobs:
     - uses: actions/checkout@v3
     - name: Setup Configuration
       run: |
-        echo "KERNEL_SOURCE=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_SOURCE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "KERNEL_SOURCE_BRANCH=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_SOURCE_BRANCH" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "KERNEL_DEFCONFIG=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_DEFCONFIG" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "KERNEL_FILE=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_FILE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "CLANG_VERSION=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "CLANG_VERSION" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "BUILD_EXTRA_COMMAND=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "EXTRA_BUILD_COMMAND" | head -n 1 | cut -d ":" -f 2)" >> $GITHUB_ENV
-        echo "DISABLE-LTO=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "DISABLE-LTO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "USE_KPROBES=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "USE_KPROBES" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "WITH_DTBO=$(cat lmi/${{ github.event.inputs.KERNEL }}.env | grep "WITH_DTBO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "KERNEL_SOURCE=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_SOURCE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "KERNEL_SOURCE_BRANCH=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_SOURCE_BRANCH" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "KERNEL_DEFCONFIG=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_DEFCONFIG" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "KERNEL_FILE=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "KERNEL_FILE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "CLANG_VERSION=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "CLANG_VERSION" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "BUILD_EXTRA_COMMAND=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "EXTRA_BUILD_COMMAND" | head -n 1 | cut -d ":" -f 2)" >> $GITHUB_ENV
+        echo "DISABLE-LTO=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "DISABLE-LTO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "USE_KPROBES=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "USE_KPROBES" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "WITH_DTBO=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "WITH_DTBO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "ENABLE_OVERLAYFS=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "ENABLE_OVERLAYFS" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "PATCH_44X_KERNEL=$(cat jason/${{ github.event.inputs.KERNEL }}.env | grep "PATCH_44X_KERNEL" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
         echo "USE_KERNELSU=${{ github.event.inputs.USE_KERNELSU }}" >> $GITHUB_ENV
 
     - name: Setup build kernel environment
@@ -47,10 +48,13 @@ jobs:
         cd $GITHUB_WORKSPACE && mkdir kernel_workspace && cd kernel_workspace
         mkdir clang-aosp
         curl -LSs "https://github.com/ShanshanHY/depo/raw/main/clang_download.py" | python3 - ${{ env.CLANG_VERSION }}
-        tar -C clang-aosp/ -zxvf clang.tar.gz
-        mkdir gcc-aosp
-        wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-11.0.0_r35.tar.gz
-        tar -C gcc-aosp/ -zxvf android-11.0.0_r35.tar.gz
+        tar -C clang-aosp/ -zxf clang.tar.gz
+        mkdir gcc-aarch64
+        wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android11-release.tar.gz -O gcc-aarch64.tar.gz
+        tar -C gcc-aarch64/ -zxf gcc-aarch64.tar.gz
+        mkdir gcc-arm
+        wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/android11-release.tar.gz -O gcc-arm.tar.gz
+        tar -C gcc-arm/ -zxf gcc-arm.tar.gz
 
     - name: Download kernel source
       run: |
@@ -76,15 +80,30 @@ jobs:
             sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }}
             echo "CONFIG_LTO_NONE=y" >> arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }}
         fi
-        
+
+    - name: Enable overlayfs
+      if: env.USE_KERNELSU == 'true'
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        echo "CONFIG_OVERLAY_FS=y" >> arch/arm64/configs/${{ env.KERNEL_DEFCONFIG }}
+
+    - name: Patch 4.4.x Kernel
+      if: env.PATCH_44X_KERNEL == 'true'
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        curl -LSs "https://github.com/ShanshanHY/depo/raw/main/patch_4.4.x.py" | python3 -
+
     - name: Build kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
         export KBUILD_BUILD_HOST=Github-Action
         export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
-        make -j$(nproc --all) O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=$GITHUB_WORKSPACE/kernel_workspace/gcc-aosp/bin/aarch64-linux-android- CC=clang ${{ env.BUILD_EXTRA_COMMAND }} ${{ env.KERNEL_DEFCONFIG }}
-        make -j$(nproc --all) O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=$GITHUB_WORKSPACE/kernel_workspace/gcc-aosp/bin/aarch64-linux-android- CC=clang ${{ env.BUILD_EXTRA_COMMAND }}
+        export ARCH=arm64
+        export CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/kernel_workspace/gcc-arm/bin/arm-linux-androideabi-
+        export CROSS_COMPILE=$GITHUB_WORKSPACE/kernel_workspace/gcc-aarch/bin/aarch64-linux-androidkernel-
+        export CC=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin/clang
+        make -j$(nproc --all) O=out ${{ env.BUILD_EXTRA_COMMAND }} ${{ env.KERNEL_DEFCONFIG }}
+        make -j$(nproc --all) O=out ${{ env.BUILD_EXTRA_COMMAND }}
 
     - name: Make Anykernel for your kernel
       run: |
